@@ -1,0 +1,175 @@
+import requests
+import time
+import random
+import string
+import re
+import ssl
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.poolmanager import PoolManager
+from requests.packages.urllib3.util.retry import Retry
+
+
+names_file_path = 'names.txt'
+emails_file_path = 'emails.txt'
+
+
+GREEN = "\033[92m"
+BLUE = "\033[94m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+RESET = "\033[0m"
+
+
+logo = f"""
+\033[92m┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃   .o88b. d8888b.  .d8b.   .o88b. db   dD ┃
+┃  d8P  Y8 88  `8D d8' `8b d8P  Y8 88 ,8P' ┃
+┃  8P      88oobY' 88ooo88 8P      88,8P   ┃
+┃  8b      88`8b   88~~~88 8b      88`8b   ┃
+┃  Y8b  d8 88 `88. 88   88 Y8b  d8 88 `88. ┃
+┃   `Y88P' 88   YD YP   YP  `Y88P' YP   YD ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+\033[92m➤━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━➤   
+\033[92m(•) DEVELOPER: OREO HUCZN
+\033[92m(•) FACEBOOK: OREO HUCZN
+\033[92m(•) GITHUB: BAOG-BILAT
+\033[92m➤━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━➤   
+\033[92m➤ EMAIL GENERATOR 1SECMAIL
+\033[92m➤━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━➤\033[0m
+"""
+
+print(logo)
+
+class TLSAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = ssl.create_default_context()
+        context.set_ciphers("DEFAULT@SECLEVEL=1")
+        kwargs['ssl_context'] = context
+        return super(TLSAdapter, self).init_poolmanager(*args, **kwargs)
+
+
+session = requests.Session()
+retry = Retry(
+    total=5,
+    backoff_factor=0.1,
+    status_forcelist=[500, 502, 503, 504]
+)
+adapter = TLSAdapter(max_retries=retry)
+session.mount('https://', adapter)
+
+
+def random_string(length=10):
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for _ in range(length))
+
+
+def generate_email():
+    return random_string() + "@1secmail.com"
+
+
+def get_verification_code(email):
+    user, domain = email.split('@')
+    base_url = f"https://www.1secmail.com/api/v1/"
+    try:
+        response = session.get(f"{base_url}?action=getMessages&login={user}&domain={domain}")
+        if response.status_code != 200:
+            return None
+
+        messages = response.json()
+        if not messages:
+            return None
+
+        message_id = messages[0]['id']
+        message_response = session.get(f"{base_url}?action=readMessage&login={user}&domain={domain}&id={message_id}")
+
+        if message_response.status_code != 200:
+            return None
+
+        message_content = message_response.json()
+        verification_code = extract_verification_code(message_content['body'])
+        return verification_code
+
+    except (requests.exceptions.RequestException, ValueError) as e:
+        print(f"{RED}Error fetching verification code: {e}{RESET}")
+        return None
+
+
+def extract_verification_code(body):
+    match = re.search(r'\b\d{5}\b', body)
+    if match:
+        return match.group(0)
+    return None
+
+
+def print_in_box(lines, color):
+    max_length = max(len(line) for line in lines) + 2
+    box_top = f"{color}┏" + "━" * max_length + "┓"
+    box_bottom = f"{color}┗" + "━" * max_length + "┛"
+    print(box_top)
+    for line in lines:
+        print(f"{color}┃ {line.ljust(max_length - 2)} ┃")
+    print(box_bottom + RESET)
+
+
+def read_names_from_file(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            names = file.readlines()
+        return [name.strip() for name in names]
+    except FileNotFoundError:
+        print(f"Error: '{file_path}' file not found.")
+        return []
+
+
+def save_emails_to_file(email, file_path):
+    try:
+        with open(file_path, 'a') as file:
+            file.write(email + '\n')
+    except Exception as e:
+        print(f"Error saving emails to file: {e}")
+
+
+def main_menu():
+    names = read_names_from_file(names_file_path)
+    if not names:
+        return
+
+    current_name_index = 0
+    while True:
+        print("\033[92m(1) GENERATE EMAIL ")
+        print("\033[92m(0) EXIT")
+        
+        choice = input("\033[92mCHOOSE AN OPTION: ")
+
+        if choice == '1':
+            if current_name_index < len(names):
+                email = generate_email()
+                current_name = names[current_name_index]
+                                
+                print_in_box([f"NAME: {current_name}", f"GENERATED EMAIL: {email}"], YELLOW)
+                                
+                print("\033[92mWAITING FOR CODE\033[0m")
+                verification_code = None
+                while not verification_code:
+                    time.sleep(1)  # Wait for 1 second before checking the inbox again
+                    verification_code = get_verification_code(email)
+                
+                if verification_code:
+                    print_in_box([f"NAME: {current_name}", f"GENERATED EMAIL: {email}", f"CODE: {verification_code}"], GREEN)
+                else:
+                    print(f"{RED}CODE NOT RECEIVED{RESET}")
+                                
+                save_emails_to_file(email, emails_file_path)
+                current_name_index += 1
+            else:
+                print("All names have been used.")
+                
+        elif choice == '0':
+            print("Exiting...")
+            break
+            
+        else:
+            print("Invalid choice. Please choose again.")
+
+if __name__ == "__main__":
+    main_menu()
